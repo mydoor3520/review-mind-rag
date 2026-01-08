@@ -1,0 +1,80 @@
+# review-mind-rag .dockerignore
+# Docker 빌드 시 제외할 파일들
+
+# === Git ===
+.git
+.gitignore
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+.eggs/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# === Virtual Environment ===
+venv/
+ENV/
+env/
+.venv/
+
+# === IDE ===
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# === Environment Variables ===
+.env
+.env.local
+.env.*.local
+
+# === Testing ===
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+*.cover
+.hypothesis/
+tests/
+
+# === Jupyter ===
+.ipynb_checkpoints/
+*.ipynb
+
+# === Data (로컬에서만 사용) ===
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# === Vector DB (로컬에서만 사용) ===
+chroma_db/*
+!chroma_db/.gitkeep
+
+# === Documentation ===
+*.md
+docs/
+
+# === CI/CD ===
+.github/
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === Misc ===
+*.log
+logs/
+temp_*/
+scripts/
+notebooks/
+*.ts
+*.json
+!pyproject.toml

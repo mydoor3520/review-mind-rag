@@ -1,0 +1,51 @@
+[project]
+name = "review-mind-rag"
+version = "0.1.0"
+description = "RAG 기반 이커머스 리뷰 분석 시스템"
+requires-python = ">=3.9"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "-ra",
+]
+markers = [
+    "unit: 단위 테스트",
+    "integration: 통합 테스트 (외부 의존성 필요)",
+    "e2e: E2E 테스트 (Playwright)",
+    "slow: 느린 테스트 (대용량 데이터 등)",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "tests/*",
+    "**/__init__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]
+
+[tool.playwright]
+# E2E 테스트 브라우저 설정
+browsers = ["chromium"]
+headless = true
+
+# Playwright pytest 설정
+[tool.pytest-playwright]
+browser = "chromium"
+headless = true
+slow_mo = 100
