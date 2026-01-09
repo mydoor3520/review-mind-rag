@@ -68,6 +68,7 @@ class AmazonReviewLoader:
                 f"raw_review_{hf_category}",
                 split=split,
                 streaming=streaming,
+                trust_remote_code=True,
                 cache_dir=str(self.cache_dir) if self.cache_dir else None
             )
         except Exception as e:

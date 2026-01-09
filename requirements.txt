@@ -13,7 +13,7 @@
 # RAG 기반 이커머스 리뷰 분석 시스템
 # review-mind-rag 의존성
 chromadb>=0.5.0
-datasets>=2.14.0  # Hugging Face datasets for Amazon Reviews
+datasets>=2.14.0,<3.0.0  # Hugging Face datasets (버전 3+ 호환성 이슈)
 langchain-chroma>=1.1.0
 langchain-classic>=0.3.0  # Legacy chains (RetrievalQA, etc.)
 langchain-community>=0.4.1
