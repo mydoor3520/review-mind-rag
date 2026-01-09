@@ -4,7 +4,7 @@
 RAG 시스템의 검색 품질을 측정하기 위한 메트릭을 제공합니다.
 """
 
-from typing import List, Dict, Any, Optional, Set, Union
+from typing import List, Dict, Any, Optional, Set
 from dataclasses import dataclass, field
 import math
 

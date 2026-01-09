@@ -1,5 +1,4 @@
 from typing import List, Optional, Dict, Any, Callable, Tuple
-from pathlib import Path
 import time
 import asyncio
 import psutil
@@ -8,7 +7,7 @@ from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
 from tqdm import tqdm
 
-from ..exceptions import IndexingError, CollectionNotFoundError
+from ..exceptions import IndexingError
 
 
 def calculate_optimal_batch_size(

@@ -106,7 +106,7 @@ if "search_results" in st.session_state and st.session_state["search_results"]:
         
         with st.expander(f"**{i}. [{category_name}] ⭐ {rating}점 {sentiment_emoji}** (유사도: {1-score:.2%})", expanded=(i <= 3)):
             st.markdown(f"**상품 ID:** `{product_id}`")
-            st.markdown(f"**리뷰 내용:**")
+            st.markdown("**리뷰 내용:**")
             st.markdown(f"> {doc.page_content}")
             
             col1, col2, col3 = st.columns(3)
