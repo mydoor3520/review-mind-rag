@@ -98,7 +98,6 @@ class RAGConfig:
 
 
 class Config:
-    """전체 설정 클래스"""
     
     def __init__(self):
         self.openai = OpenAIConfig()
@@ -107,10 +106,31 @@ class Config:
         self.rag = RAGConfig()
     
     def validate(self) -> bool:
-        """모든 필수 설정 검증"""
         self.openai.validate()
         return True
+    
+    def get_status(self) -> dict:
+        return {
+            "api_key_set": bool(self.openai.api_key),
+            "embedding_model": self.openai.embedding_model,
+            "llm_model": self.openai.llm_model,
+            "chroma_dir": self.chroma.persist_directory,
+            "collection_name": self.chroma.collection_name,
+        }
+    
+    def is_ready(self) -> tuple[bool, Optional[str]]:
+        if not self.openai.api_key:
+            return False, "OPENAI_API_KEY 환경 변수가 설정되지 않았습니다."
+        return True, None
 
 
-# 전역 설정 인스턴스
 config = Config()
+
+
+def check_environment() -> dict:
+    return {
+        "openai_api_key": bool(os.getenv("OPENAI_API_KEY")),
+        "embedding_model": os.getenv("EMBEDDING_MODEL", "text-embedding-3-small"),
+        "llm_model": os.getenv("LLM_MODEL", "gpt-4o-mini"),
+        "chroma_persist_dir": os.getenv("CHROMA_PERSIST_DIR", str(PROJECT_ROOT / "chroma_db")),
+    }

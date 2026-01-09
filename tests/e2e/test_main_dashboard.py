@@ -72,7 +72,7 @@ class TestMainDashboardFeatureCards:
         """상품 검색 기능 카드가 표시되어야 한다"""
         page, _ = page_with_server
         
-        search_card = page.locator("text=상품 검색")
+        search_card = page.get_by_role("heading", name="상품 검색")
         expect(search_card).to_be_visible()
     
     def test_QA_기능_카드_표시(self, page_with_server):
@@ -86,14 +86,14 @@ class TestMainDashboardFeatureCards:
         """리뷰 요약 기능 카드가 표시되어야 한다"""
         page, _ = page_with_server
         
-        summary_card = page.locator("text=리뷰 요약")
+        summary_card = page.get_by_role("heading", name="리뷰 요약")
         expect(summary_card).to_be_visible()
     
     def test_비교_기능_카드_표시(self, page_with_server):
         """상품 비교 기능 카드가 표시되어야 한다"""
         page, _ = page_with_server
         
-        compare_card = page.locator("text=상품 비교")
+        compare_card = page.get_by_role("heading", name="상품 비교")
         expect(compare_card).to_be_visible()
     
     def test_검색_버튼_클릭_가능(self, page_with_server):

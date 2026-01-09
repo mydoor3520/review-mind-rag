@@ -1,18 +1,13 @@
-"""
-review-mind-rag Streamlit 메인 앱
-
-RAG 기반 이커머스 리뷰 분석 대시보드
-"""
+"""Review Mind RAG 메인 대시보드"""
 
 import streamlit as st
 from pathlib import Path
 import sys
+from typing import Dict, Any, Optional
 
-# 프로젝트 루트를 path에 추가
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# 페이지 설정
 st.set_page_config(
     page_title="Review Mind RAG",
     page_icon="🧠",
@@ -20,7 +15,34 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 커스텀 CSS
+
+@st.cache_resource
+def get_system_status() -> Dict[str, Any]:
+    status = {
+        "vectorstore_ready": False,
+        "document_count": 0,
+        "collection_name": "N/A",
+        "error": None
+    }
+    
+    try:
+        from src.rag.vectorstore import ReviewVectorStore
+        vectorstore = ReviewVectorStore()
+        stats = vectorstore.get_collection_stats()
+        status["vectorstore_ready"] = True
+        status["document_count"] = stats.get("document_count", 0)
+        status["collection_name"] = stats.get("collection_name", "reviews")
+    except Exception as e:
+        status["error"] = str(e)
+    
+    return status
+
+
+def check_api_key() -> bool:
+    import os
+    return bool(os.environ.get("OPENAI_API_KEY") or st.session_state.get("openai_api_key"))
+
+
 st.markdown("""
 <style>
     .main-header {
@@ -34,48 +56,54 @@ st.markdown("""
         color: #666;
         margin-bottom: 2rem;
     }
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1.5rem;
-        border-radius: 10px;
-        color: white;
-    }
     .stButton>button {
         width: 100%;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# 메인 헤더
 st.markdown('<p class="main-header">🧠 Review Mind RAG</p>', unsafe_allow_html=True)
 st.markdown('<p class="sub-header">RAG 기반 이커머스 리뷰 분석 시스템</p>', unsafe_allow_html=True)
 
-# 사이드바
 with st.sidebar:
-    st.image("https://via.placeholder.com/150x50?text=ReviewMind", width=150)
-    st.markdown("---")
     st.markdown("### 📊 시스템 상태")
     
-    # 시스템 상태 표시 (추후 실제 데이터로 대체)
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("리뷰 수", "0", help="Vector DB에 저장된 리뷰 수")
-    with col2:
-        st.metric("카테고리", "4", help="지원 카테고리 수")
+    status = get_system_status()
+    
+    if status["vectorstore_ready"]:
+        st.success("✅ VectorStore 연결됨")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("리뷰 수", f"{status['document_count']:,}")
+        with col2:
+            st.metric("카테고리", "4")
+    else:
+        st.error("❌ VectorStore 연결 실패")
+        if status["error"]:
+            with st.expander("에러 상세"):
+                st.code(status["error"])
+    
+    api_ready = check_api_key()
+    if api_ready:
+        st.success("✅ API 키 설정됨")
+    else:
+        st.warning("⚠️ API 키 필요")
     
     st.markdown("---")
     st.markdown("### ⚙️ 설정")
     
-    # OpenAI API 키 입력
     api_key = st.text_input(
         "OpenAI API Key",
         type="password",
-        help="OpenAI API 키를 입력하세요"
+        help="OpenAI API 키를 입력하세요 (.env 파일에 설정 권장)"
     )
     
     if api_key:
         st.session_state["openai_api_key"] = api_key
+        import os
+        os.environ["OPENAI_API_KEY"] = api_key
         st.success("API 키가 설정되었습니다!")
+        st.rerun()
     
     st.markdown("---")
     st.markdown("### 📚 페이지 안내")
@@ -86,10 +114,15 @@ with st.sidebar:
     - ⚖️ **Compare**: 상품 비교
     """)
 
-# 메인 콘텐츠
 st.markdown("---")
 
-# 기능 카드들
+if not api_ready:
+    st.warning("⚠️ OpenAI API 키가 설정되지 않았습니다. 사이드바에서 API 키를 입력하거나 .env 파일에 설정해주세요.")
+
+if status["document_count"] == 0:
+    st.info("📢 VectorStore에 데이터가 없습니다. 아래 명령어로 데이터를 로드해주세요.")
+    st.code("python scripts/load_all_categories.py", language="bash")
+
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
@@ -116,20 +149,14 @@ with col4:
     if st.button("비교하기", key="btn_compare"):
         st.switch_page("pages/4_⚖️_Compare.py")
 
-# 하단 정보
 st.markdown("---")
 st.markdown("### 🚀 시작하기")
 
 with st.expander("사용 방법", expanded=True):
     st.markdown("""
-    1. **API 키 설정**: 사이드바에서 OpenAI API 키를 입력하세요.
-    2. **데이터 로드**: 데이터가 아직 없다면 먼저 리뷰 데이터를 로드해야 합니다.
-    3. **기능 사용**: 원하는 기능을 선택하여 리뷰를 분석하세요.
-    
-    ```bash
-    # 데이터 로드 예시 (터미널에서 실행)
-    python -m src.data.loader --category Electronics --limit 1000
-    ```
+    1. **API 키 설정**: `.env` 파일에 `OPENAI_API_KEY`를 설정하거나 사이드바에서 입력
+    2. **데이터 로드**: 터미널에서 `python scripts/load_all_categories.py` 실행
+    3. **기능 사용**: 원하는 기능을 선택하여 리뷰를 분석
     """)
 
 with st.expander("지원 카테고리"):
@@ -139,10 +166,30 @@ with st.expander("지원 카테고리"):
     | Electronics | 전자제품 (이어폰, 스피커, 케이블 등) |
     | Appliances | 가전제품 (에어프라이어, 청소기 등) |
     | Beauty | 뷰티/화장품 |
-    | Home & Kitchen | 가구/주방용품 |
+    | Home | 가구/주방용품 |
     """)
 
-# 푸터
+with st.expander("데이터 로드 방법"):
+    st.markdown("""
+    ```bash
+    # 전체 카테고리 로드 (권장)
+    python scripts/load_all_categories.py
+    
+    # 또는 Python에서 직접
+    from src.data.loader import AmazonReviewLoader
+    from src.data.preprocessor import ReviewPreprocessor
+    from src.rag.vectorstore import ReviewVectorStore
+    
+    loader = AmazonReviewLoader()
+    reviews = loader.load_category("Electronics", limit=1000)
+    
+    preprocessor = ReviewPreprocessor()
+    documents = list(preprocessor.process_reviews(reviews))
+    
+    vectorstore = ReviewVectorStore.from_documents(documents)
+    ```
+    """)
+
 st.markdown("---")
 st.markdown(
     '<p style="text-align: center; color: #888;">Review Mind RAG v0.1.0 | '

@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Run unit tests
+        run: pytest tests/unit/ -v --tb=short
+      
+      - name: Run integration tests
+        run: pytest tests/integration/ -v --tb=short
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      
+      - name: Install ruff
+        run: pip install ruff
+      
+      - name: Run linter
+        run: ruff check src/ app/ --ignore=E501
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: [test, lint]
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Install Playwright browsers
+        run: playwright install chromium
+      
+      - name: Run E2E tests
+        run: pytest tests/e2e/ -v --tb=short
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: [test, lint]
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build Docker image
+        run: docker build -t review-mind-rag:${{ github.sha }} .
+      
+      - name: Test Docker image
+        run: |
+          docker run -d --name test-container -p 8501:8501 review-mind-rag:${{ github.sha }}
+          sleep 10
+          curl -f http://localhost:8501/_stcore/health || exit 1
+          docker stop test-container
