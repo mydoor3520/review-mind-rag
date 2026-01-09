@@ -7,7 +7,7 @@
 import os
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from dotenv import load_dotenv
 
 from .exceptions import APIKeyNotFoundError
@@ -118,7 +118,7 @@ class Config:
             "collection_name": self.chroma.collection_name,
         }
     
-    def is_ready(self) -> tuple[bool, Optional[str]]:
+    def is_ready(self) -> Tuple[bool, Optional[str]]:
         if not self.openai.api_key:
             return False, "OPENAI_API_KEY 환경 변수가 설정되지 않았습니다."
         return True, None
