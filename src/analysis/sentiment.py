@@ -79,11 +79,15 @@ class SentimentAnalyzer:
         # 평균 평점
         avg_rating = sum(ratings) / len(ratings) if ratings else 0
         
+        dominant = "neutral"
+        if sentiment_counts:
+            dominant = max(sentiment_counts.keys(), key=lambda k: sentiment_counts[k])
+        
         return {
             "total_reviews": total,
             "average_rating": round(avg_rating, 2),
             "distribution": distribution,
-            "dominant_sentiment": max(sentiment_counts, key=sentiment_counts.get) if sentiment_counts else "neutral"
+            "dominant_sentiment": dominant
         }
     
     def get_sentiment_summary(self, analysis: Dict[str, Any]) -> str:

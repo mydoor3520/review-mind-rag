@@ -4,7 +4,9 @@
 LLM을 사용하여 리뷰를 요약합니다.
 """
 
+import json
 from typing import List, Optional, Dict, Any
+
 from langchain_openai import ChatOpenAI
 from langchain_core.documents import Document
 
@@ -130,20 +132,20 @@ JSON 형식으로 응답해주세요:
 """
         
         response = self.llm.invoke(prompt)
+        content = str(response.content) if response.content else ""
         
-        # JSON 파싱 시도
         try:
-            import json
-            result = json.loads(response.content)
+            result = json.loads(content)
+            pros = result.get("pros", [])
+            cons = result.get("cons", [])
             return {
-                "pros": result.get("pros", []),
-                "cons": result.get("cons", [])
+                "pros": [str(p) for p in pros] if isinstance(pros, list) else [],
+                "cons": [str(c) for c in cons] if isinstance(cons, list) else []
             }
         except json.JSONDecodeError:
-            # 파싱 실패 시 기본값 반환
             return {
                 "pros": ["파싱 오류 - 원본 응답을 확인하세요"],
-                "cons": [response.content[:200]]
+                "cons": [content[:200]]
             }
     
     def generate_one_liner(
@@ -178,4 +180,5 @@ JSON 형식으로 응답해주세요:
 한 줄 요약:"""
         
         response = self.llm.invoke(prompt)
-        return response.content.strip()
+        content = str(response.content) if response.content else ""
+        return content.strip()
