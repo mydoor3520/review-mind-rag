@@ -1,47 +1,86 @@
-"""
-Vector Store 관리 모듈
+"""Vector Store 관리 모듈"""
 
-Chroma DB를 사용하여 리뷰 임베딩을 저장하고 관리합니다.
-"""
-
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Callable, Tuple
 from pathlib import Path
+import time
+import asyncio
+import psutil
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
 from tqdm import tqdm
 
 
+def calculate_optimal_batch_size(
+    available_memory_mb: float,
+    avg_doc_size_bytes: int,
+    min_batch_size: int = 10,
+    max_batch_size: int = 1000,
+    memory_usage_ratio: float = 0.3
+) -> int:
+    available_bytes = available_memory_mb * 1024 * 1024
+    usable_bytes = available_bytes * memory_usage_ratio
+    calculated_size = int(usable_bytes / max(avg_doc_size_bytes, 1))
+    return max(min_batch_size, min(calculated_size, max_batch_size))
+
+
+class IndexingProgress:
+    def __init__(self, total: int):
+        self.total = total
+        self.processed = 0
+        self._start_time: Optional[float] = None
+        self._peak_memory_mb: float = 0
+    
+    def start(self) -> None:
+        self._start_time = time.time()
+        self._update_peak_memory()
+    
+    def update(self, count: int) -> None:
+        self.processed = count
+        self._update_peak_memory()
+    
+    def _update_peak_memory(self) -> None:
+        current_memory = psutil.Process().memory_info().rss / (1024 * 1024)
+        self._peak_memory_mb = max(self._peak_memory_mb, current_memory)
+    
+    def get_eta(self) -> Optional[float]:
+        if self._start_time is None or self.processed == 0:
+            return None
+        elapsed = time.time() - self._start_time
+        rate = self.processed / elapsed
+        remaining = self.total - self.processed
+        return remaining / rate if rate > 0 else None
+    
+    def get_speed(self) -> Optional[float]:
+        if self._start_time is None or self.processed == 0:
+            return None
+        elapsed = time.time() - self._start_time
+        return self.processed / elapsed if elapsed > 0 else None
+    
+    def get_percent(self) -> float:
+        return (self.processed / self.total * 100) if self.total > 0 else 0.0
+    
+    def get_memory_mb(self) -> float:
+        return psutil.Process().memory_info().rss / (1024 * 1024)
+    
+    def get_peak_memory_mb(self) -> float:
+        return self._peak_memory_mb
+
+
 class ReviewVectorStore:
-    """
-    리뷰 Vector Store 관리자
-    
-    Chroma DB를 사용하여 리뷰 임베딩을 저장하고 검색합니다.
-    """
-    
     def __init__(
         self,
         persist_directory: str = "./chroma_db",
         collection_name: str = "reviews",
         embedding_model: str = "text-embedding-3-small"
     ):
-        """
-        :param persist_directory: Chroma DB 저장 경로
-        :param collection_name: 컬렉션 이름
-        :param embedding_model: OpenAI 임베딩 모델
-        """
         self.persist_directory = persist_directory
         self.collection_name = collection_name
-        
-        # OpenAI Embeddings 초기화
         self.embeddings = OpenAIEmbeddings(model=embedding_model)
-        
-        # Chroma 인스턴스 (lazy initialization)
         self._vectorstore: Optional[Chroma] = None
     
     @property
     def vectorstore(self) -> Chroma:
-        """Chroma 인스턴스 반환 (없으면 생성)"""
         if self._vectorstore is None:
             self._vectorstore = Chroma(
                 collection_name=self.collection_name,
@@ -56,18 +95,8 @@ class ReviewVectorStore:
         batch_size: int = 100,
         show_progress: bool = True
     ) -> int:
-        """
-        문서들을 Vector Store에 추가합니다.
-        
-        :param documents: LangChain Document 리스트
-        :param batch_size: 배치 크기
-        :param show_progress: 진행률 표시 여부
-        :return: 추가된 문서 수
-        """
         total = len(documents)
-        
-        if show_progress:
-            pbar = tqdm(total=total, desc="Adding documents to vector store")
+        pbar = tqdm(total=total, desc="Adding documents to vector store") if show_progress else None
         
         added = 0
         for i in range(0, total, batch_size):
@@ -75,14 +104,130 @@ class ReviewVectorStore:
             self.vectorstore.add_documents(batch)
             added += len(batch)
             
-            if show_progress:
+            if pbar:
                 pbar.update(len(batch))
         
-        if show_progress:
+        if pbar:
             pbar.close()
         
         print(f"Added {added} documents to vector store")
         return added
+    
+    def add_documents_with_progress(
+        self,
+        documents: List[Document],
+        batch_size: int = 100,
+        progress_callback: Optional[Callable[[int, int], None]] = None
+    ) -> int:
+        total = len(documents)
+        added = 0
+        
+        for i in range(0, total, batch_size):
+            batch = documents[i:i + batch_size]
+            self.vectorstore.add_documents(batch)
+            added += len(batch)
+            
+            if progress_callback:
+                progress_callback(added, total)
+        
+        return added
+    
+    def add_documents_with_stats(
+        self,
+        documents: List[Document],
+        batch_size: int = 100,
+        track_memory: bool = False
+    ) -> Dict[str, Any]:
+        total = len(documents)
+        progress = IndexingProgress(total)
+        progress.start()
+        
+        added = 0
+        for i in range(0, total, batch_size):
+            batch = documents[i:i + batch_size]
+            self.vectorstore.add_documents(batch)
+            added += len(batch)
+            progress.update(added)
+        
+        elapsed = time.time() - (progress._start_time or time.time())
+        stats: Dict[str, Any] = {
+            "total_documents": total,
+            "processed_documents": added,
+            "elapsed_time": elapsed,
+            "documents_per_second": added / elapsed if elapsed > 0 else 0,
+        }
+        
+        if track_memory:
+            stats["memory_usage_mb"] = progress.get_memory_mb()
+            stats["peak_memory_mb"] = progress.get_peak_memory_mb()
+        
+        return stats
+    
+    def add_documents_with_retry(
+        self,
+        documents: List[Document],
+        batch_size: int = 100,
+        max_retries: int = 3,
+        retry_delay: float = 1.0
+    ) -> Dict[str, Any]:
+        total = len(documents)
+        added = 0
+        total_retries = 0
+        
+        for i in range(0, total, batch_size):
+            batch = documents[i:i + batch_size]
+            retries = 0
+            
+            while retries <= max_retries:
+                try:
+                    self.vectorstore.add_documents(batch)
+                    added += len(batch)
+                    break
+                except Exception:
+                    retries += 1
+                    total_retries += 1
+                    if retries > max_retries:
+                        return {
+                            "success": False,
+                            "processed": added,
+                            "retry_count": total_retries,
+                            "error": f"Max retries exceeded at batch {i // batch_size}"
+                        }
+                    time.sleep(retry_delay)
+        
+        return {
+            "success": True,
+            "processed": added,
+            "retry_count": total_retries
+        }
+    
+    async def add_documents_async(
+        self,
+        documents: List[Document],
+        batch_size: int = 100,
+        max_concurrent: int = 4
+    ) -> Dict[str, Any]:
+        total = len(documents)
+        batches = [documents[i:i + batch_size] for i in range(0, total, batch_size)]
+        
+        semaphore = asyncio.Semaphore(max_concurrent)
+        processed = 0
+        
+        async def process_batch(batch: List[Document]) -> int:
+            nonlocal processed
+            async with semaphore:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, self.vectorstore.add_documents, batch)
+                processed += len(batch)
+                return len(batch)
+        
+        tasks = [process_batch(batch) for batch in batches]
+        await asyncio.gather(*tasks)
+        
+        return {
+            "success": True,
+            "processed": processed
+        }
     
     def similarity_search(
         self,
@@ -90,39 +235,15 @@ class ReviewVectorStore:
         k: int = 5,
         filter: Optional[Dict[str, Any]] = None
     ) -> List[Document]:
-        """
-        유사도 검색을 수행합니다.
-        
-        :param query: 검색 쿼리
-        :param k: 반환할 문서 수
-        :param filter: 메타데이터 필터
-        :return: 검색된 Document 리스트
-        """
-        return self.vectorstore.similarity_search(
-            query,
-            k=k,
-            filter=filter
-        )
+        return self.vectorstore.similarity_search(query, k=k, filter=filter)
     
     def similarity_search_with_score(
         self,
         query: str,
         k: int = 5,
         filter: Optional[Dict[str, Any]] = None
-    ) -> List[tuple]:
-        """
-        유사도 점수와 함께 검색을 수행합니다.
-        
-        :param query: 검색 쿼리
-        :param k: 반환할 문서 수
-        :param filter: 메타데이터 필터
-        :return: (Document, score) 튜플 리스트
-        """
-        return self.vectorstore.similarity_search_with_score(
-            query,
-            k=k,
-            filter=filter
-        )
+    ) -> List[Tuple[Document, float]]:
+        return self.vectorstore.similarity_search_with_score(query, k=k, filter=filter)
     
     def get_retriever(
         self,
@@ -130,15 +251,7 @@ class ReviewVectorStore:
         k: int = 5,
         filter: Optional[Dict[str, Any]] = None
     ):
-        """
-        LangChain Retriever 인스턴스를 반환합니다.
-        
-        :param search_type: 검색 타입 (similarity, mmr)
-        :param k: 반환할 문서 수
-        :param filter: 메타데이터 필터
-        :return: Retriever 인스턴스
-        """
-        search_kwargs = {"k": k}
+        search_kwargs: Dict[str, Any] = {"k": k}
         if filter:
             search_kwargs["filter"] = filter
         
@@ -147,12 +260,7 @@ class ReviewVectorStore:
             search_kwargs=search_kwargs
         )
     
-    def get_collection_stats(self) -> Dict:
-        """
-        컬렉션 통계를 반환합니다.
-        
-        :return: 통계 딕셔너리
-        """
+    def get_collection_stats(self) -> Dict[str, Any]:
         collection = self.vectorstore._collection
         count = collection.count()
         
@@ -163,7 +271,6 @@ class ReviewVectorStore:
         }
     
     def delete_collection(self) -> None:
-        """컬렉션을 삭제합니다."""
         self.vectorstore.delete_collection()
         self._vectorstore = None
         print(f"Deleted collection: {self.collection_name}")
@@ -176,15 +283,6 @@ class ReviewVectorStore:
         collection_name: str = "reviews",
         embedding_model: str = "text-embedding-3-small"
     ) -> "ReviewVectorStore":
-        """
-        문서들로부터 새로운 Vector Store를 생성합니다.
-        
-        :param documents: LangChain Document 리스트
-        :param persist_directory: 저장 경로
-        :param collection_name: 컬렉션 이름
-        :param embedding_model: 임베딩 모델
-        :return: ReviewVectorStore 인스턴스
-        """
         embeddings = OpenAIEmbeddings(model=embedding_model)
         
         vectorstore = Chroma.from_documents(

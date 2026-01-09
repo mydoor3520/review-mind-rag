@@ -1,48 +1,39 @@
-# review-mind-rag 의존성
-# RAG 기반 이커머스 리뷰 분석 시스템
-
-# === LLM Framework ===
-langchain>=1.2.1
-langchain-classic>=0.3.0  # Legacy chains (RetrievalQA, etc.)
-langchain-openai>=1.1.7
-langchain-chroma>=1.1.0
-langchain-community>=0.4.1
-
-# === Vector Database ===
-chromadb>=0.5.0
-
-# === OpenAI ===
-openai>=1.50.0
-
-# === Web UI ===
-streamlit>=1.40.0
-
-# === Data Processing ===
-pandas>=2.0.0
-numpy>=1.24.0
-
-# === Visualization ===
-plotly>=5.18.0
-matplotlib>=3.8.0
-wordcloud>=1.9.0
-
-# === Utilities ===
-python-dotenv>=1.0.0
-tqdm>=4.66.0
-requests>=2.31.0
 
 # === Data Loading ===
-datasets>=2.14.0  # Hugging Face datasets for Amazon Reviews
-
-# === Reranking ===
-sentence-transformers>=2.2.0  # Cross-encoder for reranking
-
-# === Testing ===
-pytest>=8.0.0
-pytest-cov>=4.1.0
-pytest-asyncio>=0.23.0
-pytest-mock>=3.12.0
-
+# === Data Processing ===
 # === E2E Testing ===
+# === LLM Framework ===
+# === OpenAI ===
+# === Reranking ===
+# === Testing ===
+# === Utilities ===
+# === Vector Database ===
+# === Visualization ===
+# === Web UI ===
+# RAG 기반 이커머스 리뷰 분석 시스템
+# review-mind-rag 의존성
+chromadb>=0.5.0
+datasets>=2.14.0  # Hugging Face datasets for Amazon Reviews
+langchain-chroma>=1.1.0
+langchain-classic>=0.3.0  # Legacy chains (RetrievalQA, etc.)
+langchain-community>=0.4.1
+langchain-openai>=1.1.7
+langchain>=1.2.1
+matplotlib>=3.8.0
+numpy>=1.24.0
+openai>=1.50.0
+pandas>=2.0.0
 playwright>=1.40.0
+plotly>=5.18.0
+psutil>=5.9.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.1.0
+pytest-mock>=3.12.0
 pytest-playwright>=0.4.0
+pytest>=8.0.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+sentence-transformers>=2.2.0  # Cross-encoder for reranking
+streamlit>=1.40.0
+tqdm>=4.66.0
+wordcloud>=1.9.0
