@@ -5,7 +5,7 @@ Cross-encoder를 사용하여 검색 결과를 재정렬합니다.
 """
 
 from typing import List, Optional, Tuple
-from langchain.schema import Document
+from langchain_core.documents import Document
 
 try:
     from sentence_transformers import CrossEncoder

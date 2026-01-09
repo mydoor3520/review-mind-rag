@@ -6,7 +6,7 @@
 
 import re
 from typing import List, Dict, Iterator, Optional
-from langchain.schema import Document
+from langchain_core.documents import Document
 
 
 class ReviewPreprocessor:

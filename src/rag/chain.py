@@ -5,10 +5,10 @@ LangChain을 사용하여 리뷰 기반 QA 체인을 구성합니다.
 """
 
 from typing import Optional, Dict, Any, List
-from langchain.prompts import PromptTemplate
-from langchain.chains import RetrievalQA
+from langchain_core.prompts import PromptTemplate
+from langchain_classic.chains import RetrievalQA
 from langchain_openai import ChatOpenAI
-from langchain.schema import Document
+from langchain_core.documents import Document
 
 from .retriever import ReviewRetriever
 from .vectorstore import ReviewVectorStore

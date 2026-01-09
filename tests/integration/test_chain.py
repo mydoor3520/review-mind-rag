@@ -8,7 +8,7 @@ LLM 호출은 Mock으로 대체합니다.
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 
-from langchain.schema import Document
+from langchain_core.documents import Document
 
 
 class TestReviewQAChainInit:

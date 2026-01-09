@@ -7,7 +7,7 @@ SentimentAnalyzer, ReviewSummarizer 단위 테스트
 import pytest
 from unittest.mock import Mock, patch, MagicMock
 
-from langchain.schema import Document
+from langchain_core.documents import Document
 
 
 # =============================================================================

@@ -8,6 +8,8 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock
 import sys
 
+import src.rag.reranker as reranker_module
+
 
 class MockDocument:
     """테스트용 Document Mock"""

@@ -5,7 +5,7 @@
 """
 
 from typing import List, Optional, Dict, Any, TYPE_CHECKING
-from langchain.schema import Document
+from langchain_core.documents import Document
 from .vectorstore import ReviewVectorStore
 
 if TYPE_CHECKING:

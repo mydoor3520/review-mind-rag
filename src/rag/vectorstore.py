@@ -6,7 +6,7 @@ Chroma DB를 사용하여 리뷰 임베딩을 저장하고 관리합니다.
 
 from typing import List, Optional, Dict, Any
 from pathlib import Path
-from langchain.schema import Document
+from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
 from tqdm import tqdm

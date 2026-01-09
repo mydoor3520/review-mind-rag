@@ -6,7 +6,7 @@
 
 from typing import List, Dict, Any
 from collections import Counter
-from langchain.schema import Document
+from langchain_core.documents import Document
 
 
 class SentimentAnalyzer:

@@ -6,7 +6,7 @@ LLM을 사용하여 리뷰를 요약합니다.
 
 from typing import List, Optional, Dict, Any
 from langchain_openai import ChatOpenAI
-from langchain.schema import Document
+from langchain_core.documents import Document
 
 
 class ReviewSummarizer:
