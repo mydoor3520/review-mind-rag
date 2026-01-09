@@ -1,5 +1,3 @@
-"""Vector Store 관리 모듈"""
-
 from typing import List, Optional, Dict, Any, Callable, Tuple
 from pathlib import Path
 import time
@@ -9,6 +7,8 @@ from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
 from tqdm import tqdm
+
+from ..exceptions import IndexingError, CollectionNotFoundError
 
 
 def calculate_optimal_batch_size(
@@ -183,16 +183,13 @@ class ReviewVectorStore:
                     self.vectorstore.add_documents(batch)
                     added += len(batch)
                     break
-                except Exception:
+                except Exception as e:
                     retries += 1
                     total_retries += 1
                     if retries > max_retries:
-                        return {
-                            "success": False,
-                            "processed": added,
-                            "retry_count": total_retries,
-                            "error": f"Max retries exceeded at batch {i // batch_size}"
-                        }
+                        raise IndexingError(
+                            f"배치 {i // batch_size}에서 최대 재시도 횟수 초과: {e}"
+                        ) from e
                     time.sleep(retry_delay)
         
         return {

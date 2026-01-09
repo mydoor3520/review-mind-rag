@@ -6,8 +6,11 @@
 
 import os
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Optional, List
 from dotenv import load_dotenv
+
+from .exceptions import APIKeyNotFoundError
 
 # .env 파일 로드
 load_dotenv()
@@ -24,9 +27,8 @@ class OpenAIConfig:
     llm_model: str = os.getenv("LLM_MODEL", "gpt-4o-mini")
     
     def validate(self) -> bool:
-        """API 키가 설정되었는지 확인"""
         if not self.api_key:
-            raise ValueError("OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
+            raise APIKeyNotFoundError("OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
         return True
 
 
@@ -39,13 +41,10 @@ class ChromaConfig:
 
 @dataclass
 class DataConfig:
-    """데이터 경로 설정"""
     data_dir: Path = PROJECT_ROOT / "data"
     raw_dir: Path = PROJECT_ROOT / "data" / "raw"
     processed_dir: Path = PROJECT_ROOT / "data" / "processed"
-    
-    # Amazon Reviews 카테고리
-    categories: list = None
+    categories: Optional[List[str]] = None
     
     def __post_init__(self):
         if self.categories is None:
@@ -53,10 +52,8 @@ class DataConfig:
                 "Electronics",
                 "Appliances", 
                 "Beauty_and_Personal_Care",
-                "Home_and_Kitchen"  # Furniture 대신 Home_and_Kitchen 사용
+                "Home_and_Kitchen",
             ]
-        
-        # 디렉토리 생성
         self.raw_dir.mkdir(parents=True, exist_ok=True)
         self.processed_dir.mkdir(parents=True, exist_ok=True)
 

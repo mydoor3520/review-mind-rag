@@ -1,13 +1,9 @@
-"""
-Amazon Reviews 데이터 로더
-
-Hugging Face datasets를 사용하여 Amazon Reviews 2023 데이터를 로드합니다.
-"""
-
 from typing import List, Dict, Optional, Iterator
 from pathlib import Path
 import json
 from tqdm import tqdm
+
+from ..exceptions import CategoryNotFoundError, DatasetLoadError
 
 
 class AmazonReviewLoader:
@@ -54,21 +50,28 @@ class AmazonReviewLoader:
         try:
             from datasets import load_dataset
         except ImportError:
-            raise ImportError("datasets 패키지를 설치해주세요: pip install datasets")
+            raise DatasetLoadError("datasets 패키지를 설치해주세요: pip install datasets")
         
-        # 카테고리 이름 정규화
-        hf_category = self.CATEGORY_MAP.get(category, category)
+        hf_category = self.CATEGORY_MAP.get(category)
+        if hf_category is None and category not in self.CATEGORY_MAP.values():
+            available = list(self.CATEGORY_MAP.keys())
+            raise CategoryNotFoundError(
+                f"지원하지 않는 카테고리: {category}. 사용 가능: {available}"
+            )
+        hf_category = hf_category or category
         
         print(f"Loading {hf_category} reviews (streaming={streaming})...")
         
-        # 데이터셋 로드
-        dataset = load_dataset(
-            self.DATASET_NAME,
-            f"raw_review_{hf_category}",
-            split=split,
-            streaming=streaming,
-            cache_dir=str(self.cache_dir) if self.cache_dir else None
-        )
+        try:
+            dataset = load_dataset(
+                self.DATASET_NAME,
+                f"raw_review_{hf_category}",
+                split=split,
+                streaming=streaming,
+                cache_dir=str(self.cache_dir) if self.cache_dir else None
+            )
+        except Exception as e:
+            raise DatasetLoadError(f"데이터셋 로드 실패: {e}") from e
         
         count = 0
         for item in tqdm(dataset, desc=f"Loading {category}"):
