@@ -5,7 +5,13 @@ import sys
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-st.set_page_config(page_title="상품 검색 - Review Mind RAG", page_icon="🔍", layout="wide")
+from src.config import config
+
+st.set_page_config(
+    page_title="상품 검색 - Review Mind RAG",
+    page_icon="🔍",
+    layout="wide"
+)
 
 st.title("🔍 상품 검색")
 st.markdown("카테고리별로 상품을 검색하고 리뷰를 확인하세요.")
@@ -25,12 +31,12 @@ def search_reviews(query: str, category: str, k: int = 10):
     vectorstore = get_vectorstore()
     if vectorstore is None:
         return []
-    
+
     try:
         filter_dict = None
         if category and category != "전체":
             filter_dict = {"category": category}
-        
+
         results = vectorstore.similarity_search_with_score(
             query=query,
             k=k,
@@ -46,7 +52,7 @@ def get_collection_stats():
     vectorstore = get_vectorstore()
     if vectorstore is None:
         return None
-    
+
     try:
         return vectorstore.get_collection_stats()
     except Exception:
@@ -61,7 +67,7 @@ with st.sidebar:
         st.metric("컬렉션", stats['collection_name'])
     else:
         st.warning("데이터가 로드되지 않았습니다.")
-    
+
     st.markdown("---")
     st.markdown("### ⚙️ 검색 설정")
     result_count = st.slider("검색 결과 수", min_value=5, max_value=50, value=10)
@@ -72,16 +78,14 @@ with col1:
     search_query = st.text_input("검색어 입력", placeholder="상품명 또는 키워드...")
 
 with col2:
-    category = st.selectbox(
-        "카테고리",
-        ["전체", "Electronics", "Appliances", "Beauty", "Home"]
-    )
+    categories = ["전체"] + (config.data.categories or [])
+    category = st.selectbox("카테고리", categories)
 
 if st.button("🔍 검색", type="primary"):
     if search_query:
         with st.spinner("검색 중..."):
             results = search_reviews(search_query, category, k=result_count)
-            
+
             if results:
                 st.success(f"{len(results)}개의 리뷰를 찾았습니다.")
                 st.session_state["search_results"] = results
@@ -101,14 +105,18 @@ if "search_results" in st.session_state and st.session_state["search_results"]:
         sentiment = metadata.get("sentiment", "neutral")
         category_name = metadata.get("category", "Unknown")
         product_id = metadata.get("product_id", "Unknown")
-        
-        sentiment_emoji = {"positive": "😊", "negative": "😞", "neutral": "😐"}.get(sentiment, "😐")
-        
-        with st.expander(f"**{i}. [{category_name}] ⭐ {rating}점 {sentiment_emoji}** (유사도: {1-score:.2%})", expanded=(i <= 3)):
+
+        sentiment_map = {"positive": "😊", "negative": "😞", "neutral": "😐"}
+        sentiment_emoji = sentiment_map.get(sentiment, "😐")
+
+        similarity = 1 - score
+        title = f"**{i}. [{category_name}] ⭐ {rating}점 {sentiment_emoji}**"
+        title += f" (유사도: {similarity:.2%})"
+        with st.expander(title, expanded=(i <= 3)):
             st.markdown(f"**상품 ID:** `{product_id}`")
             st.markdown("**리뷰 내용:**")
             st.markdown(f"> {doc.page_content}")
-            
+
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.caption(f"평점: {rating}점")

@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional, Tuple
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.config import config
+
 st.set_page_config(
     page_title="리뷰 QA - Review Mind RAG",
     page_icon="💬",
@@ -23,30 +25,33 @@ def get_qa_chain() -> Tuple[Any, Optional[str]]:
     try:
         from src.rag.vectorstore import ReviewVectorStore
         from src.rag.chain import ReviewQAChain
-        
+
         vectorstore = ReviewVectorStore()
         stats = vectorstore.get_collection_stats()
         if stats["document_count"] == 0:
             return None, "데이터가 로드되지 않았습니다."
-        
+
         return ReviewQAChain(vectorstore=vectorstore), None
     except Exception as e:
         return None, str(e)
 
 
-def ask_question(question: str, category: str, min_rating: int) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+def ask_question(
+    question: str, category: str, min_rating: int, use_reranker: bool
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     qa_chain, error = get_qa_chain()
     if qa_chain is None:
         return None, error
-    
+
     try:
         category_filter = None if category == "전체" else category
         rating_filter = None if min_rating == 1 else min_rating
-        
+
         result = qa_chain.ask(
             question=question,
             category=category_filter,
-            min_rating=rating_filter
+            min_rating=rating_filter,
+            use_reranker=use_reranker
         )
         return result, None
     except Exception as e:
@@ -89,23 +94,26 @@ with st.sidebar:
         st.success("✅ QA Chain 준비 완료")
     else:
         st.error(f"❌ {error}")
-    
+
     st.markdown("---")
     st.markdown("### 🔧 필터 설정")
-    
-    category = st.selectbox(
-        "카테고리",
-        ["전체", "Electronics", "Appliances", "Beauty", "Home"],
-        index=0
-    )
-    
+
+    categories = ["전체"] + (config.data.categories or [])
+    category = st.selectbox("카테고리", categories, index=0)
+
     min_rating = st.slider(
         "최소 평점",
         min_value=1,
         max_value=5,
         value=1
     )
-    
+
+    use_reranker = st.toggle(
+        "Reranker 사용",
+        value=False,
+        help="검색 결과 재정렬로 품질 향상 (응답 시간 증가)"
+    )
+
     st.markdown("---")
     st.markdown("### 💡 예시 질문")
     st.markdown("""
@@ -119,20 +127,20 @@ with st.sidebar:
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
-        
+
         if message["role"] == "assistant" and message.get("sources"):
             render_sources(message["sources"])
 
 if prompt := st.chat_input("리뷰에 대해 질문하세요..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
-    
+
     with st.chat_message("user"):
         st.markdown(prompt)
-    
+
     with st.chat_message("assistant"):
         with st.spinner("리뷰를 분석하고 있습니다..."):
-            result, error = ask_question(prompt, category, min_rating)
-            
+            result, error = ask_question(prompt, category, min_rating, use_reranker)
+
             if error or result is None:
                 response = f"""
 ⚠️ **오류가 발생했습니다**: {error or "알 수 없는 오류"}
@@ -151,12 +159,12 @@ python scripts/load_all_categories.py
             else:
                 answer = result["answer"]
                 source_docs = result.get("source_documents", [])
-                
+
                 st.markdown(answer)
-                
+
                 sources = extract_sources(source_docs)
                 render_sources(sources)
-                
+
                 st.session_state.messages.append({
                     "role": "assistant",
                     "content": answer,

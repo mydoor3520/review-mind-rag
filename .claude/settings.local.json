@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "WebFetch(domain:github.com)",
-      "Bash(npm show:*)"
+      "Bash(npm show:*)",
+      "Bash(linear issue list:*)",
+      "Bash(npx @linear/cli issue list)"
     ]
   }
 }
