@@ -1,5 +1,6 @@
 # review-mind-rag docker-compose.yml
-# 
+# Synology NAS (DS220+) 배포용
+#
 # 실행: docker-compose up -d
 # 종료: docker-compose down
 # 로그: docker-compose logs -f
@@ -12,29 +13,23 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: jeonghopak/review-mind-rag:latest
     container_name: review-mind-rag
-    restart: unless-stopped
+    restart: "no"  # 수동 관리
     ports:
-      - "${STREAMLIT_PORT:-8501}:8501"
+      - "8510:8501"
+    env_file:
+      - .env
     environment:
-      # OpenAI API 설정
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-small}
-      - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
-      # ChromaDB 설정
+      # ChromaDB 설정 (컨테이너 내부 경로)
       - CHROMA_PERSIST_DIR=/app/chroma_db
-      - CHROMA_COLLECTION_NAME=${CHROMA_COLLECTION_NAME:-reviews}
-      # 데이터 설정
-      - DATA_DIR=/app/data
-      - RAW_DATA_DIR=/app/data/raw
-      - PROCESSED_DATA_DIR=/app/data/processed
       # Python 설정
       - PYTHONPATH=/app
       - PYTHONUNBUFFERED=1
     volumes:
       # 데이터 영속성을 위한 볼륨 마운트
-      - review-mind-data:/app/data
-      - review-mind-chroma:/app/chroma_db
+      - ./chroma_db:/app/chroma_db
+      - ./data:/app/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
       interval: 30s
@@ -48,12 +43,6 @@ services:
         max-file: "3"
     networks:
       - review-mind-network
-
-volumes:
-  review-mind-data:
-    name: review-mind-data
-  review-mind-chroma:
-    name: review-mind-chroma
 
 networks:
   review-mind-network:

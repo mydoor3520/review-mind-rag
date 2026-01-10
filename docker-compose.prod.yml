@@ -1,0 +1,43 @@
+# review-mind-rag docker-compose.prod.yml
+# 프로덕션 환경 오버라이드 설정 (Synology NAS)
+#
+# 사용법: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+version: "3.8"
+
+services:
+  review-mind:
+    # Docker Hub 이미지 사용 (빌드 대신)
+    image: jeonghopak/review-mind-rag:latest
+    build: !reset null
+
+    # 리소스 제한 (NAS 환경 고려)
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.5'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+
+    # 프로덕션 환경 변수
+    environment:
+      - STREAMLIT_SERVER_RUN_ON_SAVE=false
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+
+    # 프로덕션 헬스체크 (더 관대한 설정)
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+
+    # 프로덕션 로깅
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+        compress: "true"

@@ -1,0 +1,99 @@
+# Docker Build & Push Workflow
+# main 브랜치 push 시 Docker 이미지 빌드, Docker Hub 푸시, NAS Webhook 호출
+
+name: Docker Build & Deploy
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - '.sisyphus/**'
+  workflow_dispatch:  # 수동 실행 허용
+
+env:
+  DOCKER_IMAGE: jeonghopak/review-mind-rag
+  REGISTRY: docker.io
+
+jobs:
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=,format=short
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+      - name: Image digest
+        run: echo "Image pushed with digest ${{ steps.build.outputs.digest }}"
+
+  deploy:
+    name: Trigger NAS Deployment
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Call NAS Webhook
+        run: |
+          # Webhook 호출 (시크릿 토큰 포함)
+          RESPONSE=$(curl -s -w "%{http_code}" -o /tmp/webhook_response.txt \
+            -X POST "${{ secrets.NAS_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -H "X-Webhook-Secret: ${{ secrets.NAS_WEBHOOK_SECRET }}" \
+            -d '{
+              "repository": "${{ github.repository }}",
+              "ref": "${{ github.ref }}",
+              "sha": "${{ github.sha }}",
+              "image": "${{ env.DOCKER_IMAGE }}:latest",
+              "actor": "${{ github.actor }}",
+              "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"
+            }')
+
+          # HTTP 상태 코드 확인
+          if [ "$RESPONSE" -ge 200 ] && [ "$RESPONSE" -lt 300 ]; then
+            echo "✅ Webhook called successfully (HTTP $RESPONSE)"
+            cat /tmp/webhook_response.txt
+          else
+            echo "⚠️ Webhook returned HTTP $RESPONSE"
+            cat /tmp/webhook_response.txt
+            # Webhook 실패해도 빌드는 성공으로 처리 (배포는 별도)
+          fi
+
+      - name: Deployment notification
+        run: |
+          echo "🚀 Docker image ${{ env.DOCKER_IMAGE }}:latest deployed"
+          echo "   SHA: ${{ github.sha }}"
+          echo "   Actor: ${{ github.actor }}"
+          echo "   Time: $(date -u)"

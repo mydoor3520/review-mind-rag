@@ -30,10 +30,11 @@ env/
 *.swo
 *~
 
-# === Environment Variables ===
+# === Environment Variables (보안) ===
 .env
 .env.local
 .env.*.local
+.env.production
 
 # === Testing ===
 .pytest_cache/
@@ -48,19 +49,21 @@ tests/
 .ipynb_checkpoints/
 *.ipynb
 
-# === Data (로컬에서만 사용) ===
+# === Data (런타임 볼륨 마운트) ===
 data/raw/*
 data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 
-# === Vector DB (로컬에서만 사용) ===
-chroma_db/*
-!chroma_db/.gitkeep
+# === Vector DB (런타임 볼륨 마운트) ===
+chroma_db/
 
 # === Documentation ===
 *.md
+!README.md
 docs/
+site/
+mkdocs.yml
 
 # === CI/CD ===
 .github/
@@ -69,12 +72,14 @@ docs/
 .DS_Store
 Thumbs.db
 
-# === Misc ===
+# === Logs ===
 *.log
 logs/
+
+# === Misc ===
 temp_*/
-scripts/
 notebooks/
 *.ts
-*.json
-!pyproject.toml
+
+# === Sisyphus Plans ===
+.sisyphus/

@@ -4,7 +4,8 @@
       "WebFetch(domain:github.com)",
       "Bash(npm show:*)",
       "Bash(linear issue list:*)",
-      "Bash(npx @linear/cli issue list)"
+      "Bash(npx @linear/cli issue list)",
+      "Bash(~/.claude/agents/notion/venv/bin/python:*)"
     ]
   }
 }
