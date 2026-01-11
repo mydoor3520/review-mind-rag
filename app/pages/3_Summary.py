@@ -8,6 +8,9 @@ from typing import Any, Dict, List, Optional, Tuple
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.config import config
+from app.components.product_search import search_and_select_product
+
 st.set_page_config(
     page_title="리뷰 요약 - Review Mind RAG",
     page_icon="📊",
@@ -15,14 +18,14 @@ st.set_page_config(
 )
 
 st.title("📊 리뷰 요약")
-st.markdown("상품별 리뷰를 자동으로 요약하고 감성을 분석합니다.")
+st.markdown("상품을 검색하여 선택하고, 리뷰를 자동으로 요약합니다.")
 
 
 @st.cache_resource
 def get_vectorstore():
     try:
         from src.rag.vectorstore import ReviewVectorStore
-        return ReviewVectorStore(), None
+        return ReviewVectorStore(auto_translate=True), None
     except Exception as e:
         return None, str(e)
 
@@ -56,7 +59,8 @@ def search_product_reviews(
         results = vectorstore.similarity_search(
             query=f"product {product_id}",
             k=k,
-            filter={"product_id": product_id}
+            filter={"product_id": product_id},
+            translate=False  # ID 검색이므로 번역 불필요
         )
         return results, None
     except Exception as e:
@@ -105,6 +109,7 @@ def analyze_sentiment(
         return None, str(e)
 
 
+# 사이드바
 with st.sidebar:
     st.markdown("### 📊 시스템 상태")
     vectorstore, vs_error = get_vectorstore()
@@ -131,10 +136,28 @@ with st.sidebar:
     st.markdown("### ⚙️ 설정")
     max_reviews = st.slider("분석할 최대 리뷰 수", min_value=10, max_value=50, value=30)
 
-product_id = st.text_input("상품 ID 입력", placeholder="ASIN 또는 상품 ID...")
+# 메인 영역
+st.markdown("### 🔍 상품 검색")
 
-if st.button("📊 요약 생성", type="primary"):
-    if product_id:
+vectorstore, _ = get_vectorstore()
+if vectorstore is None:
+    st.error("VectorStore가 초기화되지 않았습니다.")
+    st.stop()
+
+# 상품 검색 및 선택
+product_id, product_name = search_and_select_product(
+    vectorstore=vectorstore,
+    key_prefix="summary",
+    label="상품 검색",
+    placeholder="분석할 상품명을 입력하세요...",
+    categories=config.data.categories
+)
+
+# 요약 생성 버튼
+st.markdown("---")
+
+if product_id:
+    if st.button("📊 요약 생성", type="primary", use_container_width=True):
         with st.spinner("리뷰를 분석하고 있습니다..."):
             documents, search_error = search_product_reviews(product_id, k=max_reviews)
 
@@ -144,6 +167,10 @@ if st.button("📊 요약 생성", type="primary"):
                 st.warning(f"상품 ID '{product_id}'에 대한 리뷰를 찾을 수 없습니다.")
             else:
                 st.success(f"{len(documents)}개의 리뷰를 찾았습니다.")
+
+                # 상품명 표시
+                if product_name:
+                    st.markdown(f"**분석 상품:** {product_name}")
 
                 col1, col2 = st.columns(2)
 
@@ -195,16 +222,18 @@ if st.button("📊 요약 생성", type="primary"):
                     review_count = summary_result['review_count']
                     total_count = summary_result.get('total_available', len(documents))
                     st.caption(f"분석된 리뷰: {review_count}개 / 총 {total_count}개")
-    else:
-        st.warning("상품 ID를 입력해주세요.")
+else:
+    st.info("👆 위에서 상품을 검색하고 선택한 후 요약을 생성하세요.")
 
 st.markdown("---")
 
 with st.expander("💡 사용 팁", expanded=False):
     st.markdown("""
-    **상품 ID 찾기:**
-    - Search 페이지에서 검색 후 상품 ID 확인
-    - Amazon ASIN 형식 (예: B09V3KXJPB)
+    **사용 방법:**
+    1. 검색창에 상품명 또는 키워드 입력 (예: "wireless earbuds", "air fryer")
+    2. 검색 버튼 클릭 또는 엔터
+    3. 검색 결과에서 원하는 상품 선택
+    4. "요약 생성" 버튼 클릭
 
     **분석 내용:**
     - **장단점**: LLM이 리뷰에서 주요 장점과 단점을 추출

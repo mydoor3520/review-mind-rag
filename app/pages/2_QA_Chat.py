@@ -21,7 +21,8 @@ st.markdown("리뷰에 대해 자연어로 질문하고 AI가 리뷰를 분석�
 
 
 @st.cache_resource
-def get_qa_chain() -> Tuple[Any, Optional[str]]:
+def get_qa_chain(_version: str = "v4") -> Tuple[Any, Optional[str]]:
+    """QA Chain 인스턴스 반환 (HyDE, Reranker 지원)"""
     try:
         from src.rag.vectorstore import ReviewVectorStore
         from src.rag.chain import ReviewQAChain
@@ -31,13 +32,18 @@ def get_qa_chain() -> Tuple[Any, Optional[str]]:
         if stats["document_count"] == 0:
             return None, "데이터가 로드되지 않았습니다."
 
-        return ReviewQAChain(vectorstore=vectorstore), None
+        return ReviewQAChain(vectorstore=vectorstore, use_hyde=True, use_reranker=False), None
     except Exception as e:
         return None, str(e)
 
 
 def ask_question(
-    question: str, category: str, min_rating: int, use_reranker: bool
+    question: str,
+    category: str,
+    min_rating: int,
+    use_reranker: bool,
+    use_hyde: bool,
+    chat_history: Optional[List[Dict[str, str]]] = None
 ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     qa_chain, error = get_qa_chain()
     if qa_chain is None:
@@ -51,7 +57,9 @@ def ask_question(
             question=question,
             category=category_filter,
             min_rating=rating_filter,
-            use_reranker=use_reranker
+            use_reranker=use_reranker,
+            use_hyde=use_hyde,
+            chat_history=chat_history
         )
         return result, None
     except Exception as e:
@@ -108,6 +116,12 @@ with st.sidebar:
         value=1
     )
 
+    use_hyde = st.toggle(
+        "HyDE 사용",
+        value=True,
+        help="질문을 가상의 리뷰로 변환하여 검색 품질 향상 (권장)"
+    )
+
     use_reranker = st.toggle(
         "Reranker 사용",
         value=False,
@@ -139,7 +153,14 @@ if prompt := st.chat_input("리뷰에 대해 질문하세요..."):
 
     with st.chat_message("assistant"):
         with st.spinner("리뷰를 분석하고 있습니다..."):
-            result, error = ask_question(prompt, category, min_rating, use_reranker)
+            # 이전 대화 히스토리 전달 (sources 제외)
+            chat_history = [
+                {"role": m["role"], "content": m["content"]}
+                for m in st.session_state.messages[:-1]  # 현재 질문 제외
+            ]
+            result, error = ask_question(
+                prompt, category, min_rating, use_reranker, use_hyde, chat_history
+            )
 
             if error or result is None:
                 response = f"""
