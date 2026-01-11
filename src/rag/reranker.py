@@ -17,13 +17,15 @@ except ImportError:
 
 class KoreanReranker:
     """
-    한국어 특화 Reranker
-    
+    다국어 지원 Reranker
+
     Cross-encoder 모델을 사용하여 Query-Document 관련성을 재평가합니다.
+    영어/한국어 혼용 환경에서 사용할 수 있습니다.
     """
-    
-    DEFAULT_MODEL = "Dongjin-kr/ko-reranker"
-    FALLBACK_MODEL = "BAAI/bge-reranker-v2-m3"
+
+    # 영어 리뷰 + 한국어/영어 질문에 적합한 다국어 모델
+    DEFAULT_MODEL = "BAAI/bge-reranker-v2-m3"
+    FALLBACK_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     
     def __init__(
         self,

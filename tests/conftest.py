@@ -10,8 +10,9 @@ from pathlib import Path
 from typing import Dict, List, Iterator
 
 import pytest
+import pytest_asyncio
 
-pytest_plugins = ["pytest_playwright"]
+pytest_plugins = ["pytest_playwright", "pytest_asyncio"]
 
 # 프로젝트 루트를 Python 경로에 추가
 PROJECT_ROOT = Path(__file__).parent.parent

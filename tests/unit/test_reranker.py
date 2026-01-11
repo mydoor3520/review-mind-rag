@@ -35,12 +35,12 @@ class TestKoreanRerankerInit:
     @patch('src.rag.reranker.SENTENCE_TRANSFORMERS_AVAILABLE', True)
     @patch('src.rag.reranker.CrossEncoder')
     def test_기본_모델명_설정(self, mock_cross_encoder):
-        """기본 모델명이 ko-reranker로 설정된다"""
+        """기본 모델명이 bge-reranker-v2-m3로 설정된다"""
         from src.rag.reranker import KoreanReranker
-        
+
         reranker = KoreanReranker()
-        
-        assert reranker.model_name == "Dongjin-kr/ko-reranker"
+
+        assert reranker.model_name == "BAAI/bge-reranker-v2-m3"
     
     @patch('src.rag.reranker.SENTENCE_TRANSFORMERS_AVAILABLE', True)
     @patch('src.rag.reranker.CrossEncoder')

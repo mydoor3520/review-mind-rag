@@ -19,7 +19,11 @@ markers = [
     "integration: 통합 테스트 (외부 의존성 필요)",
     "e2e: E2E 테스트 (Playwright)",
     "slow: 느린 테스트 (대용량 데이터 등)",
+    "asyncio: 비동기 테스트",
 ]
+
+[tool.pytest-asyncio]
+mode = "auto"
 filterwarnings = [
     "ignore::DeprecationWarning",
     "ignore::PendingDeprecationWarning",
