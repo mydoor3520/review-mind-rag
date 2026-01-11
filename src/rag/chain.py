@@ -4,8 +4,9 @@ RAG Chain 모듈
 LangChain을 사용하여 리뷰 기반 QA 체인을 구성합니다.
 """
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from langchain_core.prompts import PromptTemplate
+from langchain_core.messages import HumanMessage, AIMessage
 from langchain_classic.chains import RetrievalQA
 from langchain_openai import ChatOpenAI
 
@@ -35,6 +36,26 @@ class ReviewQAChain:
 
 답변:"""
 
+    DEFAULT_CONVERSATIONAL_PROMPT = """당신은 상품 리뷰 분석 전문가입니다.
+사용자의 질문에 리뷰 데이터를 기반으로 답변해주세요.
+
+이전 대화:
+{chat_history}
+
+관련 리뷰:
+{context}
+
+현재 질문: {question}
+
+답변 시 주의사항:
+- 이전 대화의 맥락을 고려하세요
+- 리뷰에 있는 정보만 사용하세요
+- 구체적인 수치나 의견을 인용하세요
+- "그 제품", "위에서 언급한" 등 이전 대화를 참조할 수 있습니다
+- 한국어로 답변해주세요
+
+답변:"""
+
     DEFAULT_SUMMARY_PROMPT = """다음 상품 리뷰들을 분석하여 요약해주세요.
 
 리뷰:
@@ -58,18 +79,21 @@ class ReviewQAChain:
         model_name: str = "gpt-4o-mini",
         temperature: float = 0.3,
         qa_prompt: Optional[str] = None,
-        use_reranker: bool = False
+        use_reranker: bool = True,
+        use_hyde: bool = True
     ):
         """
         :param vectorstore: ReviewVectorStore 인스턴스
         :param model_name: OpenAI 모델 이름
         :param temperature: 생성 temperature
         :param qa_prompt: 커스텀 QA 프롬프트
-        :param use_reranker: Reranker 사용 여부 (기본: False)
+        :param use_reranker: Reranker 사용 여부 (기본: True)
+        :param use_hyde: HyDE 쿼리 확장 사용 여부 (기본: True)
         """
         self.vectorstore = vectorstore
         self.use_reranker = use_reranker
-        
+        self.use_hyde = use_hyde
+
         reranker = None
         if use_reranker:
             try:
@@ -77,8 +101,12 @@ class ReviewQAChain:
                 reranker = KoreanReranker()
             except ImportError:
                 pass
-        
-        self.retriever = ReviewRetriever(vectorstore, reranker=reranker)
+
+        self.retriever = ReviewRetriever(
+            vectorstore,
+            reranker=reranker,
+            use_hyde=use_hyde
+        )
         
         # LLM 초기화
         self.llm = ChatOpenAI(
@@ -114,67 +142,151 @@ class ReviewQAChain:
         category: Optional[str] = None,
         product_id: Optional[str] = None,
         min_rating: Optional[int] = None,
-        use_reranker: Optional[bool] = None
+        use_reranker: Optional[bool] = None,
+        use_hyde: Optional[bool] = None,
+        chat_history: Optional[List[Dict[str, str]]] = None
     ) -> Dict[str, Any]:
         """
         질문에 대해 리뷰 기반 답변을 생성합니다.
-        
+
         :param question: 사용자 질문
         :param category: 카테고리 필터
         :param product_id: 상품 ID 필터
         :param min_rating: 최소 평점 필터
         :param use_reranker: Reranker 사용 여부 (None이면 초기화 시 설정 따름)
+        :param use_hyde: HyDE 쿼리 확장 사용 여부 (None이면 초기화 시 설정 따름)
+        :param chat_history: 이전 대화 히스토리 [{"role": "user/assistant", "content": "..."}]
         :return: 답변과 소스 문서
         """
         should_rerank = use_reranker if use_reranker is not None else self.use_reranker
-        
-        if should_rerank and self.retriever.reranker:
-            source_docs = self.retriever.search_with_rerank(
-                query=question,
-                k=5,
-                fetch_k=20,
-                category=category,
-                min_rating=min_rating,
-                product_id=product_id
+        should_use_hyde = use_hyde if use_hyde is not None else self.use_hyde
+
+        # 대화 맥락이 있으면 검색 쿼리 확장
+        search_query = question
+        if chat_history:
+            # 최근 대화에서 맥락 추출하여 검색 쿼리에 추가
+            search_query = self._build_contextual_query(question, chat_history)
+
+        # 고급 검색 사용 (HyDE + Reranker)
+        source_docs = self.retriever.search(
+            query=search_query,
+            k=5,
+            fetch_k=20,
+            category=category,
+            min_rating=min_rating,
+            product_id=product_id,
+            use_reranker=should_rerank,
+            use_hyde=should_use_hyde
+        )
+
+        # 컨텍스트 구성 (상품명 포함, fallback: product_id)
+        context = "\n\n---\n\n".join([
+            f"[상품: {self._get_product_display_name(doc)[:50]}] "
+            f"[평점: {doc.metadata.get('rating', 'N/A')}점]\n{doc.page_content}"
+            for doc in source_docs
+        ])
+
+        # 대화 히스토리가 있으면 대화형 프롬프트 사용
+        if chat_history:
+            history_text = self._format_chat_history(chat_history)
+            prompt_text = self.DEFAULT_CONVERSATIONAL_PROMPT.format(
+                chat_history=history_text,
+                context=context,
+                question=question
             )
-            
-            context = "\n\n---\n\n".join([
-                f"[평점: {doc.metadata.get('rating', 'N/A')}점]\n{doc.page_content}"
-                for doc in source_docs
-            ])
-            
-            prompt_text = self.qa_prompt.format(context=context, question=question)
-            response = self.llm.invoke(prompt_text)
-            
-            return {
-                "answer": response.content,
-                "source_documents": source_docs,
-                "question": question
-            }
-        
-        if category or product_id or min_rating:
-            retriever = self.retriever.get_langchain_retriever(
-                category=category,
-                min_rating=min_rating
-            )
-            
-            chain = RetrievalQA.from_chain_type(
-                llm=self.llm,
-                chain_type="stuff",
-                retriever=retriever,
-                chain_type_kwargs={"prompt": self.qa_prompt},
-                return_source_documents=True
-            )
-            result = chain.invoke({"query": question})
         else:
-            result = self.qa_chain.invoke({"query": question})
-        
+            prompt_text = self.qa_prompt.format(context=context, question=question)
+
+        response = self.llm.invoke(prompt_text)
+
         return {
-            "answer": result["result"],
-            "source_documents": result.get("source_documents", []),
+            "answer": response.content,
+            "source_documents": source_docs,
             "question": question
         }
-    
+
+    def _format_chat_history(
+        self,
+        chat_history: List[Dict[str, str]],
+        max_turns: int = 5
+    ) -> str:
+        """대화 히스토리를 텍스트로 포맷합니다."""
+        # 최근 N개 턴만 사용
+        recent_history = chat_history[-(max_turns * 2):]
+
+        formatted = []
+        for msg in recent_history:
+            role = "사용자" if msg["role"] == "user" else "AI"
+            content = msg["content"][:500]  # 길이 제한
+            formatted.append(f"{role}: {content}")
+
+        return "\n".join(formatted) if formatted else "(이전 대화 없음)"
+
+    def _build_contextual_query(
+        self,
+        question: str,
+        chat_history: List[Dict[str, str]]
+    ) -> str:
+        """대화 맥락을 포함한 검색 쿼리를 생성합니다."""
+        if not chat_history:
+            return question
+
+        # 최근 사용자 질문에서 주제 추출
+        recent_topics = []
+        for msg in chat_history[-6:]:  # 최근 3턴
+            if msg["role"] == "user":
+                recent_topics.append(msg["content"])
+
+        if not recent_topics:
+            return question
+
+        # LLM을 사용하여 맥락 기반 쿼리 생성
+        context_prompt = f"""이전 대화의 주제를 고려하여 현재 질문에 대한 검색 쿼리를 생성하세요.
+
+이전 질문들:
+{chr(10).join(f'- {q}' for q in recent_topics[-3:])}
+
+현재 질문: {question}
+
+규칙:
+- 현재 질문이 이전 주제와 연관된 경우, 주제를 포함한 검색 쿼리를 생성
+- 현재 질문이 완전히 새로운 주제인 경우, 현재 질문만 반환
+- 검색 쿼리만 출력 (설명 없이)
+
+검색 쿼리:"""
+
+        try:
+            response = self.llm.invoke(context_prompt)
+            expanded_query = response.content.strip()
+            # 너무 길면 자르기
+            if len(expanded_query) > 200:
+                expanded_query = expanded_query[:200]
+            return expanded_query
+        except Exception:
+            # 실패 시 기본 동작: 최근 주제 + 현재 질문
+            last_topic = recent_topics[-1] if recent_topics else ""
+            # 간단한 키워드 추출 (첫 몇 단어)
+            topic_keywords = " ".join(last_topic.split()[:5])
+            return f"{question} {topic_keywords}"
+
+    def _get_product_display_name(self, doc) -> str:
+        """
+        문서에서 표시할 상품명을 결정합니다.
+        Fallback 체인: product_name → product_id → 'Unknown'
+        """
+        product_name = doc.metadata.get("product_name", "")
+        product_id = doc.metadata.get("product_id", "")
+
+        # product_name이 유효하면 사용
+        if product_name and product_name not in ("Unknown Product", "Unknown", ""):
+            return product_name
+
+        # product_id(ASIN)가 있으면 표시
+        if product_id:
+            return f"Product ({product_id})"
+
+        return "Unknown"
+
     def summarize_product(
         self,
         product_id: str,
