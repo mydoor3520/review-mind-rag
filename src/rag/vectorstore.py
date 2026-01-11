@@ -1,13 +1,61 @@
 from typing import List, Optional, Dict, Any, Callable, Tuple
 import time
 import asyncio
+import re
 import psutil
 from langchain_core.documents import Document
 from langchain_chroma import Chroma
-from langchain_openai import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from tqdm import tqdm
 
 from ..exceptions import IndexingError
+
+
+class QueryTranslator:
+    """
+    한국어 검색 쿼리를 영어로 번역합니다.
+
+    영어 리뷰 데이터에서 한국어 쿼리로 검색할 때 사용합니다.
+    """
+
+    TRANSLATION_PROMPT = """Translate the following Korean search query to English.
+If the query is already in English or contains English product names, keep them as is.
+Only output the translated query, nothing else.
+
+Query: {query}
+Translation:"""
+
+    def __init__(self, model_name: str = "gpt-4o-mini", temperature: float = 0.0):
+        self._llm: Optional[ChatOpenAI] = None
+        self.model_name = model_name
+        self.temperature = temperature
+
+    @property
+    def llm(self) -> ChatOpenAI:
+        if self._llm is None:
+            self._llm = ChatOpenAI(model=self.model_name, temperature=self.temperature)
+        return self._llm
+
+    def is_korean(self, text: str) -> bool:
+        """텍스트에 한국어가 포함되어 있는지 확인합니다."""
+        korean_pattern = re.compile(r'[\uac00-\ud7af\u1100-\u11ff\u3130-\u318f]')
+        return bool(korean_pattern.search(text))
+
+    def translate(self, query: str) -> str:
+        """
+        한국어 쿼리를 영어로 번역합니다.
+        이미 영어인 경우 그대로 반환합니다.
+
+        :param query: 검색 쿼리
+        :return: 번역된 쿼리 (또는 원본)
+        """
+        if not self.is_korean(query):
+            return query
+
+        prompt = self.TRANSLATION_PROMPT.format(query=query)
+        response = self.llm.invoke(prompt)
+        translated = response.content.strip()
+        return translated
 
 
 def calculate_optimal_batch_size(
@@ -71,12 +119,28 @@ class ReviewVectorStore:
         self,
         persist_directory: str = "./chroma_db",
         collection_name: str = "reviews",
-        embedding_model: str = "text-embedding-3-small"
+        embedding_model: str = "text-embedding-3-small",
+        auto_translate: bool = True
     ):
         self.persist_directory = persist_directory
         self.collection_name = collection_name
         self.embeddings = OpenAIEmbeddings(model=embedding_model)
+        self.auto_translate = auto_translate
         self._vectorstore: Optional[Chroma] = None
+        self._translator: Optional[QueryTranslator] = None
+
+    @property
+    def translator(self) -> QueryTranslator:
+        """쿼리 번역기 (lazy loading)"""
+        if self._translator is None:
+            self._translator = QueryTranslator()
+        return self._translator
+
+    def _prepare_query(self, query: str) -> str:
+        """쿼리를 검색에 적합하게 준비합니다 (필요시 번역)."""
+        if self.auto_translate:
+            return self.translator.translate(query)
+        return query
     
     @property
     def vectorstore(self) -> Chroma:
@@ -229,17 +293,73 @@ class ReviewVectorStore:
         self,
         query: str,
         k: int = 5,
-        filter: Optional[Dict[str, Any]] = None
+        filter: Optional[Dict[str, Any]] = None,
+        translate: Optional[bool] = None
     ) -> List[Document]:
-        return self.vectorstore.similarity_search(query, k=k, filter=filter)
-    
+        """
+        유사도 검색을 수행합니다.
+
+        :param query: 검색 쿼리
+        :param k: 반환할 결과 수
+        :param filter: 메타데이터 필터
+        :param translate: 쿼리 번역 여부 (None이면 auto_translate 설정 따름)
+        :return: 검색된 Document 리스트
+        """
+        should_translate = translate if translate is not None else self.auto_translate
+        search_query = self.translator.translate(query) if should_translate else query
+        return self.vectorstore.similarity_search(search_query, k=k, filter=filter)
+
     def similarity_search_with_score(
         self,
         query: str,
         k: int = 5,
-        filter: Optional[Dict[str, Any]] = None
+        filter: Optional[Dict[str, Any]] = None,
+        translate: Optional[bool] = None
     ) -> List[Tuple[Document, float]]:
-        return self.vectorstore.similarity_search_with_score(query, k=k, filter=filter)
+        """
+        유사도 점수와 함께 검색을 수행합니다.
+
+        :param query: 검색 쿼리
+        :param k: 반환할 결과 수
+        :param filter: 메타데이터 필터
+        :param translate: 쿼리 번역 여부 (None이면 auto_translate 설정 따름)
+        :return: (Document, score) 튜플 리스트
+        """
+        should_translate = translate if translate is not None else self.auto_translate
+        search_query = self.translator.translate(query) if should_translate else query
+        return self.vectorstore.similarity_search_with_score(search_query, k=k, filter=filter)
+
+    def mmr_search(
+        self,
+        query: str,
+        k: int = 5,
+        fetch_k: int = 20,
+        lambda_mult: float = 0.5,
+        filter: Optional[Dict[str, Any]] = None,
+        translate: Optional[bool] = None
+    ) -> List[Document]:
+        """
+        MMR(Maximum Marginal Relevance) 검색을 수행합니다.
+
+        관련성과 다양성의 균형을 맞춰 결과를 반환합니다.
+
+        :param query: 검색 쿼리
+        :param k: 반환할 결과 수
+        :param fetch_k: 1차 검색에서 가져올 문서 수
+        :param lambda_mult: 다양성 파라미터 (0: 최대 다양성, 1: 최대 관련성)
+        :param filter: 메타데이터 필터
+        :param translate: 쿼리 번역 여부 (None이면 auto_translate 설정 따름)
+        :return: 검색된 Document 리스트
+        """
+        should_translate = translate if translate is not None else self.auto_translate
+        search_query = self.translator.translate(query) if should_translate else query
+        return self.vectorstore.max_marginal_relevance_search(
+            search_query,
+            k=k,
+            fetch_k=fetch_k,
+            lambda_mult=lambda_mult,
+            filter=filter
+        )
     
     def get_retriever(
         self,
