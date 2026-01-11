@@ -6,14 +6,27 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.data.loader import AmazonReviewLoader
+# .env 파일에서 환경변수 로드
+from dotenv import load_dotenv
+load_dotenv(PROJECT_ROOT / ".env")
+
+from src.data.loader import AmazonReviewLoader, ProductMetadataStore
 from src.data.preprocessor import ReviewPreprocessor
-from src.rag.vectorstore import ReviewVectorStore, IndexingProgress, calculate_optimal_batch_size
+from src.rag.vectorstore import ReviewVectorStore, calculate_optimal_batch_size
 import psutil
 
 
 def get_available_memory_mb() -> float:
     return psutil.virtual_memory().available / (1024 * 1024)
+
+
+# 카테고리별 메타데이터 parquet 파일 경로 매핑
+META_PARQUET_MAP = {
+    "Electronics": "data/meta/electronics_meta*.parquet",
+    "Appliances": "data/meta/appliances_meta*.parquet",
+    "Beauty": "data/meta/beauty_meta*.parquet",
+    "Home": "data/meta/home_meta*.parquet",
+}
 
 
 def main():
@@ -22,10 +35,14 @@ def main():
     parser.add_argument("--batch-size", type=int, default=None, help="배치 크기 (None이면 자동 계산)")
     parser.add_argument("--collection-name", type=str, default="reviews_all", help="컬렉션 이름")
     parser.add_argument("--dry-run", action="store_true", help="실제 인덱싱 없이 로딩만 테스트")
+    parser.add_argument("--meta-dir", type=str, default="data/meta", help="메타데이터 디렉토리")
+    parser.add_argument("--skip-meta", action="store_true", help="메타데이터 로딩 건너뛰기")
     args = parser.parse_args()
-    
+
+    import glob
+
     categories = ["Electronics", "Appliances", "Beauty", "Home"]
-    
+
     print("=" * 60)
     print("4개 카테고리 전체 데이터 로딩 테스트")
     print("=" * 60)
@@ -34,8 +51,21 @@ def main():
     print(f"컬렉션: {args.collection_name}")
     print(f"사용 가능 메모리: {get_available_memory_mb():.0f} MB")
     print("=" * 60)
-    
-    loader = AmazonReviewLoader()
+
+    # 메타데이터 로드
+    metadata_store = None
+    if not args.skip_meta:
+        print("\n[메타데이터 로딩]")
+        metadata_store = ProductMetadataStore()
+        meta_dir = Path(args.meta_dir)
+
+        if meta_dir.exists():
+            metadata_store.load_from_directory(meta_dir)
+            print(f"메타데이터 로드 완료: {len(metadata_store)} 상품")
+        else:
+            print(f"메타데이터 디렉토리가 없습니다: {meta_dir}")
+
+    loader = AmazonReviewLoader(metadata_store=metadata_store)
     preprocessor = ReviewPreprocessor()
     
     all_documents = []

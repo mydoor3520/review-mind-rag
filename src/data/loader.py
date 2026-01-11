@@ -2,8 +2,135 @@ from typing import List, Dict, Optional, Iterator
 from pathlib import Path
 import json
 from tqdm import tqdm
+import pandas as pd
 
 from ..exceptions import CategoryNotFoundError, DatasetLoadError
+
+
+class ProductMetadataStore:
+    """
+    상품 메타데이터 저장소
+
+    ASIN을 키로 하여 상품명, 브랜드, 가격 등의 메타데이터를 저장합니다.
+    """
+
+    def __init__(self):
+        self._metadata: Dict[str, Dict] = {}
+
+    def load_from_parquet(self, parquet_path: Path) -> int:
+        """
+        Parquet 파일에서 메타데이터를 로드합니다.
+
+        :param parquet_path: Parquet 파일 경로
+        :return: 로드된 상품 수
+        """
+        df = pd.read_parquet(parquet_path)
+        count = 0
+
+        for _, row in tqdm(df.iterrows(), total=len(df), desc="Loading metadata"):
+            asin = row.get("parent_asin", "")
+            if asin:
+                self._metadata[asin] = {
+                    "product_name": row.get("title", "Unknown Product"),
+                    "brand": row.get("store", ""),
+                    "price": row.get("price", None),
+                    "average_rating": row.get("average_rating", None),
+                    "rating_number": row.get("rating_number", 0),
+                    "main_category": row.get("main_category", ""),
+                    "categories": list(row.get("categories", [])) if row.get("categories") is not None else [],
+                    "features": list(row.get("features", [])) if row.get("features") is not None else [],
+                    "description": list(row.get("description", [])) if row.get("description") is not None else [],
+                }
+                count += 1
+
+        print(f"Loaded {count} product metadata from {parquet_path}")
+        return count
+
+    def load_from_multiple_parquets(self, parquet_paths: List[Path]) -> int:
+        """
+        여러 Parquet 파일에서 메타데이터를 로드합니다.
+        """
+        total = 0
+        for path in parquet_paths:
+            total += self.load_from_parquet(path)
+        return total
+
+    def load_from_jsonl(self, jsonl_path: Path) -> int:
+        """
+        JSONL 파일에서 메타데이터를 로드합니다.
+
+        :param jsonl_path: JSONL 파일 경로
+        :return: 로드된 상품 수
+        """
+        count = 0
+        with open(jsonl_path, "r", encoding="utf-8") as f:
+            for line in tqdm(f, desc=f"Loading metadata from {jsonl_path.name}"):
+                if not line.strip():
+                    continue
+                try:
+                    item = json.loads(line)
+                    asin = item.get("parent_asin", "")
+                    if asin:
+                        self._metadata[asin] = {
+                            "product_name": item.get("title", "Unknown Product"),
+                            "brand": item.get("store", ""),
+                            "price": item.get("price", None),
+                            "average_rating": item.get("average_rating", None),
+                            "rating_number": item.get("rating_number", 0),
+                            "main_category": item.get("main_category", ""),
+                            "categories": item.get("categories", []) or [],
+                            "features": item.get("features", []) or [],
+                            "description": item.get("description", []) or [],
+                        }
+                        count += 1
+                except json.JSONDecodeError:
+                    continue
+
+        print(f"Loaded {count} product metadata from {jsonl_path}")
+        return count
+
+    def load_from_directory(self, meta_dir: Path) -> int:
+        """
+        디렉토리에서 모든 메타데이터 파일(parquet, jsonl)을 로드합니다.
+
+        :param meta_dir: 메타데이터 디렉토리
+        :return: 로드된 총 상품 수
+        """
+        total = 0
+
+        # Parquet 파일 로드
+        for parquet_file in meta_dir.glob("*.parquet"):
+            if parquet_file.stat().st_size > 100:  # 빈 파일 제외
+                total += self.load_from_parquet(parquet_file)
+
+        # JSONL 파일 로드
+        for jsonl_file in meta_dir.glob("*.jsonl"):
+            if jsonl_file.stat().st_size > 100:  # 빈 파일 제외
+                total += self.load_from_jsonl(jsonl_file)
+
+        print(f"Total metadata loaded: {len(self._metadata)} products")
+        return total
+
+    def get(self, asin: str) -> Optional[Dict]:
+        """
+        ASIN으로 상품 메타데이터를 조회합니다.
+        """
+        return self._metadata.get(asin)
+
+    def get_product_name(self, asin: str, default: str = "Unknown Product") -> str:
+        """
+        ASIN으로 상품명을 조회합니다.
+        """
+        meta = self._metadata.get(asin)
+        if meta:
+            return meta.get("product_name", default)
+        return default
+
+    def __len__(self) -> int:
+        return len(self._metadata)
+
+    def __contains__(self, asin: str) -> bool:
+        return asin in self._metadata
 
 
 class AmazonReviewLoader:
@@ -25,11 +152,17 @@ class AmazonReviewLoader:
         "Home": "Home_and_Kitchen",
     }
     
-    def __init__(self, cache_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        cache_dir: Optional[Path] = None,
+        metadata_store: Optional[ProductMetadataStore] = None
+    ):
         """
         :param cache_dir: 데이터 캐시 디렉토리
+        :param metadata_store: 상품 메타데이터 저장소 (상품명 조회용)
         """
         self.cache_dir = cache_dir
+        self.metadata_store = metadata_store
     
     def load_category(
         self,
@@ -105,19 +238,47 @@ class AmazonReviewLoader:
     def _normalize_review(self, item: Dict, category: str) -> Dict:
         """
         리뷰 데이터를 정규화된 형식으로 변환합니다.
-        
+
         :param item: 원본 리뷰 데이터
         :param category: 카테고리
         :return: 정규화된 리뷰 딕셔너리
         """
+        asin = item.get("parent_asin") or item.get("asin", "")
+        review_title = item.get("title", "")
+
+        # 상품명 결정 (Fallback 체인: 메타데이터 → 리뷰 제목 → ASIN)
+        product_name = None
+        brand = ""
+        price = None
+
+        # 1. 메타데이터 스토어에서 조회
+        if self.metadata_store and asin:
+            meta = self.metadata_store.get(asin)
+            if meta:
+                product_name = meta.get("product_name")
+                brand = meta.get("brand", "")
+                price = meta.get("price")
+
+        # 2. 메타데이터 없으면 리뷰 제목 사용 (상품 힌트가 될 수 있음)
+        if not product_name and review_title:
+            # 리뷰 제목이 너무 짧거나 일반적이지 않으면 사용
+            if len(review_title) > 10:
+                product_name = f"[Review] {review_title[:80]}"
+
+        # 3. 최종 fallback: ASIN 표시
+        if not product_name:
+            product_name = f"Product ({asin})" if asin else "Unknown Product"
+
         return {
-            "review_id": item.get("asin", "") + "_" + str(item.get("user_id", "")),
-            "product_id": item.get("asin", ""),
-            "product_name": item.get("title", "Unknown Product"),
+            "review_id": asin + "_" + str(item.get("user_id", "")),
+            "product_id": asin,
+            "product_name": product_name,
+            "brand": brand,
+            "price": price,
             "category": category,
             "rating": item.get("rating", 0),
             "review_text": item.get("text", ""),
-            "review_title": item.get("title", ""),
+            "review_title": review_title,
             "helpful_votes": item.get("helpful_vote", 0),
             "verified_purchase": item.get("verified_purchase", False),
             "timestamp": item.get("timestamp", None),

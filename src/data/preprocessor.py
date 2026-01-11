@@ -91,25 +91,28 @@ class ReviewPreprocessor:
     def review_to_document(self, review: Dict) -> Document:
         """
         리뷰를 LangChain Document로 변환합니다.
-        
+
         :param review: 리뷰 딕셔너리
         :return: LangChain Document
         """
         # 텍스트 정제
         clean_review_text = self.clean_text(review.get("review_text", ""))
-        
+
         # 메타데이터 구성
         metadata = {
             "review_id": review.get("review_id", ""),
             "product_id": review.get("product_id", ""),
-            "product_name": review.get("product_name", ""),
+            "product_name": review.get("product_name", "Unknown Product"),
+            "brand": review.get("brand", ""),
+            "price": review.get("price"),
             "category": review.get("category", ""),
+            "review_title": review.get("review_title", ""),
             "rating": review.get("rating", 0),
             "helpful_votes": review.get("helpful_votes", 0),
             "verified_purchase": review.get("verified_purchase", False),
             "sentiment": self._get_sentiment(review.get("rating", 0)),
         }
-        
+
         # Document 생성
         return Document(
             page_content=clean_review_text,
